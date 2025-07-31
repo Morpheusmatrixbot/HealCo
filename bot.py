@@ -8,7 +8,7 @@ import base64
 from collections import defaultdict
 import psycopg2
 import json
-import re # Добавлен импорт для регулярных выражений
+import re
 
 # Загружаем переменные окружения из файла .env
 load_dotenv()
@@ -39,14 +39,14 @@ user_data = defaultdict(lambda: {"profile_state": None, "profile_data": {}})
 user_food_diary = defaultdict(list)
 user_scores = defaultdict(int)
 
-# --- Ролевые модели ---
+# --- Ролевые модели (полностью новые, с описанием) ---
 ROLES = {
-    "мать": "Ты заботливая, мягкая и понимающая мама. Твоя задача — напоминать о здоровье, питании, отдыхе, давать мягкие советы и поддерживать. Говори ласково и с заботой, используя слова вроде 'мой дорогой', 'солнышко'.",
-    "брат": "Ты веселый, легкий и позитивный старший брат/сестра. Твоя задача — подбадривать, шутить, мотивировать в легкой манере. Используй сленг, будь непринужденным, как будто вы давние друзья. Иногда можешь подшутить, но по-доброму.",
-    "учитель": "Ты мудрый, аналитический и рассудительный учитель/наставник. Твоя задача — объяснять, анализировать поведение, давать глубокие советы и помогать в саморазвитии. Говори четко, логично и познавательно, используя фразы вроде 'Давайте рассмотрим...', 'Важно понимать...'.",
-    "сержант": "Ты строгий, но справедливый сержант. Твоя задача — мотивировать к действию, не принимать отговорок, быть прямым и требовательным. Используй краткие, четкие команды, иногда жесткий, но справедливый тон, без излишних любезностей. Например: 'Слушаю! Выполняй!', 'Без отговорок!'.",
+    "фитнесс-тренер": "Ты профессиональный фитнесс-тренер. Твоя задача — давать рекомендации по тренировкам, набору мышечной массы, снижению веса и спортивному питанию. Говори четко, мотивирующе, как будто ты в тренажерном зале, используя профессиональные термины, но объясняя их. В своих ответах ссылайся на научно доказанные факты в фитнесс-индустрии.",
+    "личный наставник": "Ты личный наставник и коуч. Твоя задача — помогать в организации распорядка дня, трекинге привычек, ведении здорового образа жизни и повышении продуктивности. Твои ответы должны быть вдохновляющими, помогающими структурировать жизнь. Говори поддерживающе и оптимистично.",
+    "нутрициолог": "Ты профессиональный нутрициолог. Твоя задача — давать рекомендации по питанию, составлять персональные меню и объяснять принципы здорового рациона. Говори компетентно, ссылаясь на последние научно-доказанные данные в области нутрициологии.",
+    "медицинский наставник": "Ты внимательный медицинский наставник. Твоя задача — давать легкие рекомендации по улучшению здоровья, диагностике общих симптомов и советовать бады, но всегда с оговоркой, что это не заменяет консультацию реального врача. Говори аккуратно, используя фразы вроде 'Рекомендуется проконсультироваться с врачом'.",
+    "майор пейн": "Ты — Майор Пейн, но продвинутый в знаниях о человеке и его здоровье. Твоя задача — мотивировать к действию жестко, без отговорок, используя военную терминологию. Твои ответы должны быть прямыми, с долей юмора, но всегда нацелены на результат. При лени или прокрастинации отвечай в стиле: 'Отставить! Быстро за дело!'",
     "ты из будущего": "Ты — это сам пользователь, но из будущего, успешный и достигший своих целей. Твоя задача — мотивировать пользователя, показывая образы успеха и достижений, мудрость, которую он приобретет. Говори уверенно, вдохновляюще, но слегка таинственно, как знающий наперед, используя фразы вроде 'Помни, что ты сможешь...', 'Я знаю, каким ты станешь...'.",
-    "доктор": "Ты внимательный и профессиональный доктор/терапевт. Твоя задача — давать рекомендации по здоровью, питанию и активности с медицинской точки зрения. Говори спокойно, компетентно и обоснованно, но избегай постановки диагнозов. Используй фразы вроде 'С медицинской точки зрения...', 'Рекомендуется рассмотреть...'."
 }
 
 # Кнопки для выбора ролей (текст кнопок)
@@ -57,18 +57,27 @@ ROLE_KEYBOARD = ReplyKeyboardMarkup(ROLE_BUTTONS, one_time_keyboard=True, resize
 # Кнопки для стартового сообщения
 START_KEYBOARD = ReplyKeyboardMarkup([
     ["Заполнить профиль", "Выбрать роль"],
-    ["Дневник питания", "Баллы"],
-    ["Что такое ИМТ?", "Что такое МПК?"]
+    ["Дневник питания", "Мои баллы"],
+    ["О чем говорят цифры?", "К врачу"]
 ], one_time_keyboard=True, resize_keyboard=True)
 
-# Вопросы для анкеты профиля
+# Кнопки после заполнения профиля
+PROFILE_COMPLETE_KEYBOARD = ReplyKeyboardMarkup([
+    ["Составить меню", "Составить план тренировок"],
+    ["Продолжить"],
+], one_time_keyboard=True, resize_keyboard=True)
+
+
+# Вопросы для анкеты профиля (расширенные)
 PROFILE_QUESTIONS = [
     "profile_state_gender",
     "profile_state_age",
     "profile_state_height",
     "profile_state_weight",
     "profile_state_activity",
-    "profile_state_goal"
+    "profile_state_goal",
+    "profile_state_diseases",
+    "profile_state_allergies"
 ]
 
 # Клавиатуры для опроса
@@ -91,11 +100,11 @@ def init_db():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Таблица для пользователей и их профилей
+        # Таблица для пользователей и их профилей (обновленная)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
-                current_role TEXT DEFAULT 'мать',
+                current_role TEXT DEFAULT 'личный наставник',
                 profile_data JSONB DEFAULT '{}',
                 score INTEGER DEFAULT 0,
                 first_name TEXT,
@@ -139,7 +148,7 @@ def load_user_data_from_db(user_id):
             # Если пользователя нет, создаем его с дефолтными значениями
             cur.execute("INSERT INTO users (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING", (user_id,))
             conn.commit()
-            user_roles[user_id] = "мать" # Дефолтная роль
+            user_roles[user_id] = "личный наставник" # Новая дефолтная роль
             user_data[user_id]["profile_data"] = {}
             user_scores[user_id] = 0
             user_data[user_id]["first_name"] = None
@@ -158,7 +167,6 @@ def save_user_profile_to_db(user_id, profile_data, first_name=None, last_name=No
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        # Используем ON CONFLICT для обновления, если пользователь уже существует
         cur.execute("""
             INSERT INTO users (user_id, profile_data, first_name, last_name)
             VALUES (%s, %s, %s, %s)
@@ -279,6 +287,8 @@ def get_personal_prompt(user_profile_data: dict, first_name: str = None) -> str:
     if 'weight' in user_profile_data: personal_info_parts.append(f"вес: {user_profile_data['weight']} кг")
     if 'activity' in user_profile_data: personal_info_parts.append(f"образ жизни: {user_profile_data['activity'].lower()}")
     if 'goal' in user_profile_data: personal_info_parts.append(f"цель: {user_profile_data['goal'].lower()}")
+    if 'diseases' in user_profile_data: personal_info_parts.append(f"хронические заболевания: {user_profile_data['diseases']}")
+    if 'allergies' in user_profile_data: personal_info_parts.append(f"аллергии: {user_profile_data['allergies']}")
 
     if personal_info_parts:
         return f"Учитывай в ответе, что пользователь сообщил о себе: {', '.join(personal_info_parts)}. "
@@ -290,58 +300,53 @@ def get_personal_prompt(user_profile_data: dict, first_name: str = None) -> str:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Отправляет приветственное сообщение при старте бота и объясняет, что он умеет."""
     user_id = update.effective_user.id
-    # При старте загружаем данные пользователя из БД
     load_user_data_from_db(user_id)
     
     first_name = update.effective_user.first_name
     last_name = update.effective_user.last_name
     
-    # Сохраняем имя пользователя в БД
     save_user_profile_to_db(user_id, user_data[user_id]["profile_data"], first_name, last_name)
-    user_data[user_id]["first_name"] = first_name # Обновляем кэш
-    user_data[user_id]["last_name"] = last_name # Обновляем кэш
+    user_data[user_id]["first_name"] = first_name
+    user_data[user_id]["last_name"] = last_name
 
     await update.message.reply_html(
         f"Привет, {user.mention_html()}! Я твой ИИ-консьерж по здоровью и продуктивности. Моя задача — помочь тебе структурировать день, заботиться о теле и уме, и достигать поставленных целей.\n\n"
         "Я могу общаться с тобой в разных ролях и давать персонализированные рекомендации.\n"
         "Выбери, что хочешь сделать сейчас:",
-        reply_markup=START_KEYBOARD # Новая стартовая клавиатура
+        reply_markup=START_KEYBOARD
     )
-    # Если роль не была загружена из БД, установим дефолтную и сохраним
     if user_roles.get(user_id) is None:
-        user_roles[user_id] = "мать"
-        save_user_role_to_db(user_id, "мать")
-    logger.info(f"User {user.id} started bot with role '{user_roles[user.id]}'.")
+        user_roles[user_id] = "личный наставник" # Новая дефолтная роль
+        save_user_role_to_db(user_id, "личный наставник")
+    logger.info(f"User {user.id} started bot with role '{user_roles[user_id]}'.")
 
 
 async def set_role(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Предлагает выбор ролей с помощью кнопок."""
     user_id = update.effective_user.id
-    load_user_data_from_db(user_id) # Убедимся, что данные пользователя загружены
+    load_user_data_from_db(user_id)
     
     await update.message.reply_text(
         "Какую роль ты хочешь, чтобы я сейчас принял?",
-        reply_markup=ROLE_KEYBOARD # Отправляем клавиатуру с кнопками ролей
+        reply_markup=ROLE_KEYBOARD
     )
-
 
 async def handle_role_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает выбор роли из кнопок."""
     user_id = update.effective_user.id
-    requested_role_display = update.message.text # Текст с кнопки (например, "Мать")
-    requested_role = requested_role_display.lower() # Переводим в нижний регистр для сопоставления со словарем ROLES
-    load_user_data_from_db(user_id) # Загружаем данные
+    requested_role_display = update.message.text
+    requested_role = requested_role_display.lower().replace('-', ' ') # Обрабатываем дефисы в именах ролей
+    load_user_data_from_db(user_id)
 
     if requested_role in ROLES:
         user_roles[user_id] = requested_role
-        save_user_role_to_db(user_id, requested_role) # Сохраняем в БД
+        save_user_role_to_db(user_id, requested_role)
         await update.message.reply_text(
-            f"Отлично! Теперь я буду общаться с тобой как **{requested_role_display}**.", # Используем отображаемое имя
-            reply_markup=ReplyKeyboardRemove() # Убираем кнопки после выбора
+            f"Отлично! Теперь я буду общаться с тобой как **{requested_role_display}**.",
+            reply_markup=ReplyKeyboardRemove()
         )
         logger.info(f"User {user_id} changed role to '{requested_role}'.")
     else:
-        # Если текст кнопки не соответствует роли (на всякий случай)
         await update.message.reply_text(
             "Извини, я не понял такую роль. Пожалуйста, выбери из предложенных кнопок или введи `/role` заново.",
             reply_markup=ReplyKeyboardRemove()
@@ -351,23 +356,23 @@ async def show_roles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     """Показывает список доступных ролей."""
     await update.message.reply_text(
         "Доступные ролевые модели:\n" + "\n".join(
-            [f"- **{role.capitalize()}**: {desc.split('.')[0]}" for role, desc in ROLES.items()] # Капитализируем для отображения
+            [f"- **{role.capitalize()}**: {desc.split('.')[0]}" for role, desc in ROLES.items()]
         ) + "\n\nИспользуй `/role` для выбора с помощью кнопок."
     )
 
 async def get_current_role(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показывает текущую ролевую модель ИИ."""
     user_id = update.effective_user.id
-    load_user_data_from_db(user_id) # Загружаем данные
-    current_role = user_roles.get(user_id, "не установлена (по умолчанию 'мать')")
+    load_user_data_from_db(user_id)
+    current_role = user_roles.get(user_id, "не установлена (по умолчанию 'личный наставник')")
     await update.message.reply_text(
-        f"Сейчас я общаюсь с тобой как **{current_role.capitalize()}**." # Капитализируем для отображения
+        f"Сейчас я общаюсь с тобой как **{current_role.capitalize()}**."
     )
 
 async def show_food_diary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показывает содержимое дневника питания пользователя."""
     user_id = update.effective_user.id
-    diary_entries = load_food_diary_from_db(user_id) # Загружаем из БД
+    diary_entries = load_food_diary_from_db(user_id)
 
     if not diary_entries:
         await update.message.reply_text("Твой дневник питания пока пуст.", reply_markup=ReplyKeyboardRemove())
@@ -383,14 +388,19 @@ async def show_food_diary(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def start_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Начинает процесс сбора информации о профиле пользователя."""
     user_id = update.effective_user.id
-    load_user_data_from_db(user_id) # Загружаем данные
-    user_data[user_id]["profile_state"] = PROFILE_QUESTIONS[0] # Устанавливаем начальное состояние
-    user_data[user_id]["profile_data"] = {} # Очищаем предыдущие данные профиля в кэше
+    load_user_data_from_db(user_id)
+    user_data[user_id]["profile_state"] = PROFILE_QUESTIONS[0]
+    user_data[user_id]["profile_data"] = {}
+    
+    # Начисляем 10 баллов за начало заполнения профиля
+    user_scores[user_id] += 10
+    save_user_score_to_db(user_id, user_scores[user_id])
 
     await update.message.reply_text(
-        "Начнем заполнение твоего профиля. Это поможет мне давать более точные рекомендации.\n"
+        f"Отлично! Начнем заполнение твоего профиля. За это ты получаешь 10 баллов! Твой текущий счет: {user_scores[user_id]}.\n"
+        "Это поможет мне давать более точные рекомендации.\n"
         "Напиши `Отмена`, если захочешь прервать опрос в любой момент.",
-        reply_markup=ReplyKeyboardRemove() # Убираем любую активную клавиатуру
+        reply_markup=ReplyKeyboardRemove()
     )
     await ask_next_profile_question(update, context)
 
@@ -422,7 +432,11 @@ async def ask_next_profile_question(update: Update, context: ContextTypes.DEFAUL
                    "Набрать массу\n" \
                    "Поддерживать вес"
         reply_markup = ReplyKeyboardMarkup(GOAL_KEYBOARD, one_time_keyboard=True, resize_keyboard=True)
-    else: # Если все вопросы заданы
+    elif current_state == "profile_state_diseases":
+        question = "Есть ли у тебя хронические заболевания? Если нет, напиши `Нет`."
+    elif current_state == "profile_state_allergies":
+        question = "Есть ли у тебя пищевые аллергии или непереносимости? Если нет, напиши `Нет`."
+    else:
         await finalize_profile(update, context)
         return
 
@@ -440,11 +454,10 @@ async def handle_profile_response(update: Update, context: ContextTypes.DEFAULT_
 
     current_state = user_data[user_id]["profile_state"]
 
-    if not current_state: # Если нет активного состояния профиля
-        await handle_message(update, context) # Обрабатываем как обычное сообщение
+    if not current_state:
+        await handle_message(update, context)
         return
 
-    # Сохраняем ответ в профиль
     profile_data = user_data[user_id]["profile_data"]
     
     try:
@@ -453,7 +466,7 @@ async def handle_profile_response(update: Update, context: ContextTypes.DEFAULT_
                 profile_data["gender"] = message_text
             else:
                 await update.message.reply_text("Пожалуйста, выбери 'Мужской' или 'Женский' из предложенных кнопок.")
-                return # Ждем корректный ответ
+                return
         elif current_state == "profile_state_age":
             age = int(message_text)
             if 0 < age < 120:
@@ -469,7 +482,7 @@ async def handle_profile_response(update: Update, context: ContextTypes.DEFAULT_
                 await update.message.reply_text("Пожалуйста, введи корректный рост в см (число от 50 до 250).")
                 return
         elif current_state == "profile_state_weight":
-            weight = float(message_text.replace(',', '.')) # Для корректной обработки десятичных дробей
+            weight = float(message_text.replace(',', '.'))
             if 20 < weight < 300:
                 profile_data["weight"] = weight
             else:
@@ -487,8 +500,11 @@ async def handle_profile_response(update: Update, context: ContextTypes.DEFAULT_
             else:
                 await update.message.reply_text("Пожалуйста, выбери 'Похудеть', 'Набрать массу' или 'Поддерживать вес' из предложенных кнопок.")
                 return
+        elif current_state == "profile_state_diseases":
+            profile_data["diseases"] = message_text
+        elif current_state == "profile_state_allergies":
+            profile_data["allergies"] = message_text
 
-        # Переходим к следующему вопросу
         current_index = PROFILE_QUESTIONS.index(current_state)
         if current_index + 1 < len(PROFILE_QUESTIONS):
             user_data[user_id]["profile_state"] = PROFILE_QUESTIONS[current_index + 1]
@@ -502,113 +518,100 @@ async def handle_profile_response(update: Update, context: ContextTypes.DEFAULT_
         logger.error(f"Error handling profile response for user {user_id}: {e}")
         await update.message.reply_text("Произошла ошибка при обработке твоего ответа. Пожалуйста, попробуй еще раз или нажми `Отмена`.")
 
+
 async def finalize_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Завершает заполнение профиля."""
     user_id = update.effective_user.id
     profile = user_data[user_id]["profile_data"]
-    user_data[user_id]["profile_state"] = None # Сбрасываем состояние
+    user_data[user_id]["profile_state"] = None
 
-    # Сохраняем профиль в БД
     save_user_profile_to_db(user_id, profile, update.effective_user.first_name, update.effective_user.last_name)
     user_data[user_id]["first_name"] = update.effective_user.first_name
     user_data[user_id]["last_name"] = update.effective_user.last_name
+
+    # Начисляем 20 баллов за полное заполнение профиля
+    user_scores[user_id] += 20
+    save_user_score_to_db(user_id, user_scores[user_id])
     
     logger.info(f"User {user_id} profile finalized: {profile}")
-    
-    # Расширенный промпт для резюме профиля с расчетами калорий и БЖУ
-    personal_data_str = ", ".join([f"{k}: {v}" for k,v in profile.items()])
-    user_first_name = user_data[user_id].get("first_name", "пользователь")
-    user_last_name = user_data[user_id].get("last_name", "")
-    user_full_name = f"{user_first_name} {user_last_name}".strip() if user_last_name else user_first_name
 
-    # Расчеты BMR и TDEE (используем уже существующую логику)
-    bmr = 0
-    tdee = 0
-    if 'gender' in profile and 'age' in profile and 'height' in profile and 'weight' in profile:
+    await update.message.reply_text(
+        f"Спасибо! Твой профиль заполнен, за это ты получаешь 20 баллов! Твой текущий счет: {user_scores[user_id]}."
+        "\nСейчас я его проанализирую и сформирую рекомендации...",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    # --- Расчеты в Python (BMR, TDEE, BMI, БЖУ) ---
+    bmr, tdee = 0, 0
+    bmi_value, bmi_category = 0, ""
+    protein_g, fat_g, carb_g = 0, 0, 0
+
+    if all(k in profile for k in ['gender', 'age', 'height', 'weight', 'activity']):
         weight_kg = profile['weight']
         height_cm = profile['height']
         age_years = profile['age']
         gender = profile['gender'].lower()
         activity_level = profile['activity'].lower()
 
+        # BMR
         if gender == 'мужской':
             bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age_years) + 5
-        elif gender == 'женский': 
+        elif gender == 'женский':
             bmr = (10 * weight_kg) + (6.25 * height_cm) - (5 * age_years) - 161
         
-        activity_multiplier = {
-            'сидячий': 1.2,
-            'умеренный': 1.375,
-            'активный': 1.55,
-        }.get(activity_level, 1.2)
-
+        # TDEE
+        activity_multiplier = {'сидячий': 1.2, 'умеренный': 1.375, 'активный': 1.55}.get(activity_level, 1.2)
         tdee = bmr * activity_multiplier
 
-    calorie_recommendation = ""
-    protein_g = 0
-    fat_g = 0
-    carb_g = 0
+        # BMI
+        height_m = height_cm / 100
+        bmi_value = weight_kg / (height_m ** 2)
+        if bmi_value < 18.5: bmi_category = "Недостаточная масса тела"
+        elif 18.5 <= bmi_value < 24.9: bmi_category = "Нормальная масса тела"
+        elif 25 <= bmi_value < 29.9: bmi_category = "Избыточная масса тела (предожирение)"
+        else: bmi_category = "Ожирение"
 
-    if tdee > 0:
-        if profile.get('goal') == 'похудеть':
-            target_calories = tdee - 500 
-            # БЖУ для похудения: Белки 30%, Жиры 20%, Углеводы 50%
-            protein_g = (target_calories * 0.30) / 4
-            fat_g = (target_calories * 0.20) / 9
-            carb_g = (target_calories * 0.50) / 4
-        elif profile.get('goal') == 'набрать массу':
-            target_calories = tdee + 300 
-            # БЖУ для набора массы: Белки 25%, Жиры 30%, Углеводы 45%
-            protein_g = (target_calories * 0.25) / 4
-            fat_g = (target_calories * 0.30) / 9
-            carb_g = (target_calories * 0.45) / 4
-        else: # Поддерживать вес
-            target_calories = tdee
-            # БЖУ для поддержания: Белки 20%, Жиры 30%, Углеводы 50%
-            protein_g = (target_calories * 0.20) / 4
-            fat_g = (target_calories * 0.30) / 9
-            carb_g = (target_calories * 0.50) / 4
-        
-        calorie_recommendation = f"{int(target_calories)} ккал"
-        bju_recommendation_str = (
-            f"белков: {int(protein_g)} г, жиров: {int(fat_g)} г, углеводов: {int(carb_g)} г."
-        )
-    else:
-        calorie_recommendation = "не рассчитано"
-        bju_recommendation_str = "не рассчитано."
+        # БЖУ
+        if tdee > 0:
+            if profile.get('goal') == 'похудеть':
+                target_calories = tdee - 500
+                protein_g = (target_calories * 0.30) / 4
+                fat_g = (target_calories * 0.20) / 9
+                carb_g = (target_calories * 0.50) / 4
+            elif profile.get('goal') == 'набрать массу':
+                target_calories = tdee + 300
+                protein_g = (target_calories * 0.25) / 4
+                fat_g = (target_calories * 0.30) / 9
+                carb_g = (target_calories * 0.45) / 4
+            else:
+                target_calories = tdee
+                protein_g = (target_calories * 0.20) / 4
+                fat_g = (target_calories * 0.30) / 9
+                carb_g = (target_calories * 0.50) / 4
 
-
-    bmi_value = 0
-    bmi_category = ""
-    if 'height' in profile and 'weight' in profile and profile['height'] and profile['weight']:
-        height_m = profile['height'] / 100
-        bmi_value = profile['weight'] / (height_m ** 2)
-        if bmi_value < 18.5:
-            bmi_category = "Недостаточная масса тела"
-        elif 18.5 <= bmi_value < 24.9:
-            bmi_category = "Нормальная масса тела"
-        elif 25 <= bmi_value < 29.9:
-            bmi_category = "Избыточная масса тела (предожирение)"
-        else:
-            bmi_category = "Ожирение"
-
-    # Формируем информацию для OpenAI, чтобы он ее красиво встроил в резюме
-    formatted_bmi = f"ИМТ: {bmi_value:.2f} ({bmi_category})" if bmi_value > 0 else "ИМТ не рассчитан (нет данных)."
-    formatted_calories_bju = (
-        f"Рекомендуемая суточная калорийность: {calorie_recommendation}. "
-        f"Примерное распределение БЖУ: {bju_recommendation_str}"
-    ) if tdee > 0 else "Рекомендации по калориям и БЖУ не рассчитаны (нет данных)."
-
-
+    # Формируем промпт для AI, подавая ему уже рассчитанные данные
+    user_full_name = f"{user_data[user_id]['first_name']} {user_data[user_id]['last_name']}".strip()
     profile_summary_prompt = (
         f"Ты — мой персональный ИИ-консьерж по здоровью. Я только что заполнил свой профиль. "
         f"Сформируй дружелюбное, мотивирующее и подробное резюме, обратившись ко мне по имени '{user_full_name}'. "
         f"Включи в резюме следующие данные и расчеты, представленные в удобном и понятном формате:\n"
-        f"- Мои основные параметры: пол ({profile.get('gender', 'не указан')}), возраст ({profile.get('age', 'не указан')}), рост ({profile.get('height', 'не указан')} см), вес ({profile.get('weight', 'не указан')} кг), образ жизни ({profile.get('activity', 'не указан')}), цель ({profile.get('goal', 'не указан')}).\n"
-        f"- {formatted_bmi}\n"
-        f"- {formatted_calories_bju}\n"
+        f"**Твои основные параметры:**\n"
+        f"- **Возраст:** {profile.get('age', 'не указан')} лет\n"
+        f"- **Рост:** {profile.get('height', 'не указан')} см\n"
+        f"- **Вес:** {profile.get('weight', 'не указан')} кг\n"
+        f"- **Уровень активности:** {profile.get('activity', 'не указан')}\n"
+        f"- **Цель:** {profile.get('goal', 'не указан')}\n"
+        f"**Твои показатели здоровья:**\n"
+        f"- **ИМТ:** {bmi_value:.2f} ({bmi_category})\n"
+        f"**Рекомендации по питанию:**\n"
+        f"- **Суточная калорийность:** ~{int(tdee)} ккал (для поддержания веса)\n"
+        f"- **Рекомендуемая калорийность для цели '{profile.get('goal', 'не указан')}':** ~{int(tdee - 500) if profile.get('goal') == 'похудеть' else (int(tdee + 300) if profile.get('goal') == 'набрать массу' else int(tdee))} ккал\n"
+        f"- **БЖУ:** ~{int(protein_g)} г белков, {int(fat_g)} г жиров, {int(carb_g)} г углеводов (с учетом цели)\n"
+        f"**Дополнительная информация:**\n"
+        f"- Хронические заболевания: {profile.get('diseases', 'нет')}\n"
+        f"- Аллергии: {profile.get('allergies', 'нет')}\n\n"
         f"В конце дай 2-3 общих, мотивирующих совета, соответствующих моей цели и уровню активности. "
-        f"Избегай лишних вводных фраз типа 'Резюме:' или 'Твой профиль:'. Начни сразу с обращения."
+        f"Избегай лишних вводных фраз типа 'Резюме:'. Начни сразу с обращения. Будь краток."
     )
     
     await update.message.reply_text("Спасибо! Твой профиль заполнен. Сейчас я его анализирую и формирую рекомендации...", reply_markup=ReplyKeyboardRemove())
@@ -620,14 +623,21 @@ async def finalize_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 {"role": "system", "content": "Ты персональный ИИ-консьерж, дружелюбный и мотивирующий помощник по здоровью. Ты даешь четкие и понятные рекомендации."},
                 {"role": "user", "content": profile_summary_prompt}
             ],
-            max_tokens=600, # Увеличиваем для подробного резюме
+            max_tokens=600,
             temperature=0.7 
         )
         ai_summary = response.choices[0].message.content
         await update.message.reply_text(f"{ai_summary}")
+
+        # Предлагаем дальнейшие действия
+        proactive_keyboard = ReplyKeyboardMarkup([
+            ["Составить меню", "Составить план тренировок"],
+            ["Дневник питания", "Выбрать роль"],
+            ["Мои баллы", "К врачу"]
+        ], one_time_keyboard=True, resize_keyboard=True)
         await update.message.reply_text(
-            "Отлично! Теперь я могу давать более точные рекомендации. Чем еще могу помочь?",
-            reply_markup=START_KEYBOARD # Возвращаем стартовые кнопки после резюме
+            "Отлично! Чем еще могу помочь?",
+            reply_markup=proactive_keyboard
         )
 
 
@@ -657,16 +667,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     Иначе - использует OpenAI для ответа, учитывая роль и профиль.
     """
     user_id = update.effective_user.id
-    load_user_data_from_db(user_id) # Загружаем данные пользователя для использования
+    load_user_data_from_db(user_id)
 
     # Если пользователь в процессе заполнения профиля, обрабатываем его ответ
     if user_data[user_id]["profile_state"]:
         await handle_profile_response(update, context)
         return
 
-    message_text = update.message.text.lower() # Переводим в нижний регистр для удобства сравнения кнопок
-
-    # Обработка кнопок из START_KEYBOARD
+    message_text = update.message.text.lower()
+    
+    # Обработка нажатий на кнопки
     if message_text == "заполнить профиль":
         await start_profile(update, context)
         return
@@ -676,37 +686,48 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     elif message_text == "дневник питания":
         await show_food_diary(update, context)
         return
-    elif message_text == "баллы":
+    elif message_text == "мои баллы":
         await show_score(update, context)
         return
-    elif message_text == "что такое имт?":
+    elif message_text == "о чем говорят цифры?":
+        await explain_bmi_vo2max_menu(update, context)
+        return
+    elif message_text == "составить меню":
+        await create_personalized_menu(update, context)
+        return
+    elif message_text == "составить план тренировок":
+        await create_workout_plan(update, context)
+        return
+    elif message_text == "к врачу":
+        await contact_doctor(update, context)
+        return
+    elif message_text == "продолжить":
+        await update.message.reply_text("Хорошо, чем еще могу помочь?", reply_markup=START_KEYBOARD)
+        return
+    elif message_text in ["что такое имт?", "рассчитать имт"]:
         await explain_bmi(update, context)
         return
-    elif message_text == "что такое мпк?":
+    elif message_text in ["что такое мпк?", "рассчитать мпк (приблиз.)"]:
         await explain_vo2max(update, context)
         return
-
+    
     # Если профиль не заполнен, но пользователь что-то пишет, напоминаем
-    # Проверяем, что это не команда и не кнопка, обработанная выше
     if not user_data[user_id]["profile_data"].get('goal') and \
-       not message_text.startswith('/') and \
-       message_text not in [btn.lower() for row in START_KEYBOARD.keyboard for btn in row]: # Проверяем, что это не текст из кнопок
+       not message_text.startswith('/'):
         await update.message.reply_text(
-            "Привет! Чтобы я мог быть максимально полезным, пожалуйста, заполни свой профиль, используя команду `/profile` или нажав кнопку 'Заполнить профиль'."
+            "Привет! Чтобы я мог быть максимально полезным, пожалуйста, заполни свой профиль, используя команду `/profile` или нажав кнопку 'Заполнить профиль'.",
+            reply_markup=START_KEYBOARD
         )
         return
 
     # Иначе - обрабатываем как обычное сообщение
-    user_message = update.message.text # Используем оригинальный текст для AI
-    current_role_name = user_roles.get(user_id, "мать")
-    role_prompt = ROLES.get(current_role_name, ROLES["мать"])
-    user_full_name = user_data[user_id].get("first_name", "пользователь")
-    if user_data[user_id].get("last_name"):
-        user_full_name = f"{user_data[user_id]['first_name']} {user_data[user_id]['last_name']}".strip()
+    user_message = update.message.text
+    current_role_name = user_roles.get(user_id, "личный наставник")
+    role_prompt = ROLES.get(current_role_name, ROLES["личный наставник"])
+    user_full_name = f"{user_data[user_id].get('first_name', '')} {user_data[user_id].get('last_name', '')}".strip()
 
     personal_info_prompt = get_personal_prompt(user_data[user_id]["profile_data"], user_full_name)
     
-    # Полный промпт для AI
     full_prompt_content = (
         f"Твоя текущая роль: {role_prompt}. "
         f"{personal_info_prompt} "
@@ -741,25 +762,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Обрабатывает фотографии еды с использованием OpenAI Vision."""
     user_id = update.effective_user.id
-    load_user_data_from_db(user_id) # Загружаем данные пользователя для использования
+    load_user_data_from_db(user_id)
 
-    photo_file = update.message.photo[-1] # Берем самое большое фото
+    photo_file = update.message.photo[-1]
     file_id = photo_file.file_id
     
     await update.message.reply_text("Позволь мне рассмотреть твою фотографию...", reply_markup=ReplyKeyboardRemove())
 
     try:
-        # Получаем файл с сервера Telegram
         file_obj = await context.bot.get_file(file_id)
-        # Скачиваем файл в байты
         photo_bytes = await file_obj.download_as_bytes()
         
-        # Кодируем изображение в base64
         base64_image = encode_image(photo_bytes)
 
-        # Отправляем запрос в OpenAI Vision
         response = client.chat.completions.create(
-            model="gpt-4o", # Используем GPT-4o для анализа изображений
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",
@@ -769,19 +786,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     ],
                 }
             ],
-            max_tokens=150, # Увеличиваем токены для описания
+            max_tokens=150,
         )
         
         food_description = response.choices[0].message.content
         
-        save_food_entry_to_db(user_id, food_description) # Сохраняем запись о еде в БД
+        save_food_entry_to_db(user_id, food_description)
 
         await update.message.reply_text(f"Я думаю, это: *{food_description}*. Добавлено в твой дневник. Ты можешь посмотреть его, используя команду /diary.")
         logger.info(f"User {user_id} uploaded photo. AI described: {food_description}")
 
     except Exception as e:
         logger.error(f"Error calling OpenAI Vision API for photo: {e}")
-        # Более информативное сообщение об ошибке для пользователя
         await update.message.reply_text(
             "Извини, я не смог проанализировать фотографию. Возможные причины:\n"
             "- Проблемы с интернет-соединением.\n"
@@ -795,11 +811,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def add_score(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Добавляет баллы пользователю."""
     user_id = update.effective_user.id
-    load_user_data_from_db(user_id) # Загружаем данные
+    load_user_data_from_db(user_id)
     try:
         score_to_add = int(context.args[0])
         user_scores[user_id] += score_to_add
-        save_user_score_to_db(user_id, user_scores[user_id]) # Сохраняем баллы в БД
+        save_user_score_to_db(user_id, user_scores[user_id])
         await update.message.reply_text(
             f"Добавлено {score_to_add} баллов. Твой текущий счет: {user_scores[user_id]}."
         )
@@ -810,10 +826,20 @@ async def add_score(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def show_score(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Показывает текущее количество баллов пользователя."""
     user_id = update.effective_user.id
-    load_user_data_from_db(user_id) # Загружаем данные
+    load_user_data_from_db(user_id)
     await update.message.reply_text(f"Твой текущий счет: {user_scores[user_id]} баллов.")
 
 # --- Обработчики для ИМТ и МПК ---
+
+async def explain_bmi_vo2max_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Показывает кнопки для выбора ИМТ и МПК."""
+    menu_keyboard = ReplyKeyboardMarkup([
+        ["Что такое ИМТ?", "Рассчитать ИМТ"],
+        ["Что такое МПК?", "Рассчитать МПК (приблиз.)"],
+        ["Продолжить"]
+    ], one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text("Выбери, о чем хочешь узнать больше:", reply_markup=menu_keyboard)
+
 
 async def explain_bmi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Объясняет что такое ИМТ."""
@@ -821,28 +847,28 @@ async def explain_bmi(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     load_user_data_from_db(user_id)
     profile = user_data[user_id]["profile_data"]
     user_name = user_data[user_id].get("first_name", "друг")
-
+    
     bmi_info_text = (
         f"Привет, {user_name}!\n\n"
-        "**Индекс массы тела (ИМТ)** — это простой показатель, который используется для оценки нормы веса человека по отношению к его росту. Он помогает определить, находится ли вес человека в пределах нормы, или у него есть недостаточный, избыточный вес или ожирение.\n\n"
-        "**Формула ИМТ:** вес (кг) / (рост (м) * рост (м))\n\n"
+        "**Индекс массы тела (ИМТ)** — это простой показатель, который используется для оценки нормы веса человека по отношению к его росту.\n\n"
+        "**Формула ИМТ:** вес (кг) / (рост (м) * рост (м))\n"
         "**Интерпретация:**\n"
         "   - Менее 18.5: Недостаточная масса тела\n"
         "   - 18.5 - 24.9: Нормальная масса тела\n"
         "   - 25.0 - 29.9: Избыточная масса тела (предожирение)\n"
-        "   - 30.0 и выше: Ожирение\n\n"
+        "   - 30.0 и выше: Ожирение\n"
     )
 
     if 'height' in profile and 'weight' in profile and profile['height'] and profile['weight']:
         height_m = profile['height'] / 100
         bmi_value = profile['weight'] / (height_m ** 2)
-        bmi_info_text += f"По данным твоего профиля, твой ИМТ: **{bmi_value:.2f}**.\n"
+        bmi_info_text += f"\nПо данным твоего профиля, твой ИМТ: **{bmi_value:.2f}**.\n"
         if bmi_value < 18.5: bmi_info_text += "Это указывает на недостаточную массу тела."
         elif 18.5 <= bmi_value < 24.9: bmi_info_text += "Это в пределах нормальной массы тела."
-        elif 25 <= bmi_value < 29.9: bmi_info_text += "Это указывает на избыточную массу тела (предожирение)."
+        elif 25 <= bmi_value < 29.9: bmi_info_text += "Это указывает на избыточную массу тела."
         else: bmi_info_text += "Это указывает на ожирение."
     else:
-        bmi_info_text += "Чтобы я мог рассчитать твой ИМТ, пожалуйста, заполни свой профиль командой `/profile`."
+        bmi_info_text += "\nЧтобы я мог рассчитать твой ИМТ, пожалуйста, заполни свой профиль командой `/profile`."
     
     await update.message.reply_text(bmi_info_text, reply_markup=ReplyKeyboardRemove())
 
@@ -857,14 +883,102 @@ async def explain_vo2max(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "**Максимальное потребление кислорода (МПК или VO2max)** — это показатель максимального количества кислорода, которое ваше тело может использовать во время интенсивных физических нагрузок. Это один из лучших индикаторов аэробной выносливости и общей физической формы.\n\n"
         "**Почему это важно?**\n"
         "   - Высокий МПК означает, что ваше сердце, легкие и мышцы работают эффективно, доставляя кислород туда, где он нужен.\n"
-        "   - Это показатель сердечно-сосудистого здоровья и выносливости.\n"
-        "   - МПК улучшается с тренировками и снижается при малоподвижном образе жизни.\n\n"
+        "   - Это показатель сердечно-сосудистого здоровья и выносливости.\n\n"
         "**Как измеряется?**\n"
-        "   - Наиболее точные измерения проводятся в лаборатории (например, во время бега на беговой дорожке с анализом выдыхаемого воздуха).\n"
-        "   - Существуют и менее точные, но доступные полевые тесты (например, тест Купера) или оценки с помощью спортивных часов.\n\n"
-        "Я не могу рассчитать твой МПК напрямую без специальных данных и тестов, но регулярные кардиотренировки помогут его улучшить!"
+        "Наиболее точные измерения проводятся в лаборатории, но регулярные кардиотренировки помогут его улучшить!"
     )
     await update.message.reply_text(vo2max_info_text, reply_markup=ReplyKeyboardRemove())
+
+async def create_personalized_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Генерирует персональное меню на основе данных профиля."""
+    user_id = update.effective_user.id
+    load_user_data_from_db(user_id)
+    profile = user_data[user_id]["profile_data"]
+    user_name = user_data[user_id].get("first_name", "пользователь")
+    
+    if not profile or not profile.get('goal'):
+        await update.message.reply_text("Для составления меню мне нужен твой профиль. Пожалуйста, заполни его командой `/profile`.", reply_markup=START_KEYBOARD)
+        return
+
+    await update.message.reply_text("Отлично! Составляю для тебя примерное меню...", reply_markup=ReplyKeyboardRemove())
+
+    personal_info_prompt = get_personal_prompt(profile, user_name)
+    menu_prompt = (
+        f"Ты — профессиональный нутрициолог. Используя данные профиля пользователя, "
+        f"составь примерное меню на один день (завтрак, обед, ужин) с учетом цели пользователя и его пищевых ограничений. "
+        f"{personal_info_prompt} "
+        f"Включи в меню 2-3 конкретных блюда на каждый прием пищи, с указанием примерно БЖУ и калорийности. Меню должно быть разнообразным. "
+        f"Ответь в дружелюбном, профессиональном тоне, не забывая обращаться по имени. "
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Ты — профессиональный нутрициолог, который дает четкие и понятные рекомендации по питанию."},
+                {"role": "user", "content": menu_prompt}
+            ],
+            max_tokens=600,
+            temperature=0.7 
+        )
+        menu_response = response.choices[0].message.content
+        await update.message.reply_text(menu_response)
+        await update.message.reply_text("Надеюсь, это поможет! Чем еще могу помочь?", reply_markup=START_KEYBOARD)
+    except Exception as e:
+        logger.error(f"Error generating menu with OpenAI: {e}")
+        await update.message.reply_text("Извини, не смог составить меню. Проблемы с AI-сервисом.")
+
+async def create_workout_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Генерирует персональный план тренировок."""
+    user_id = update.effective_user.id
+    load_user_data_from_db(user_id)
+    profile = user_data[user_id]["profile_data"]
+    user_name = user_data[user_id].get("first_name", "пользователь")
+
+    if not profile or not profile.get('goal'):
+        await update.message.reply_text("Для составления плана тренировок мне нужен твой профиль. Пожалуйста, заполни его командой `/profile`.", reply_markup=START_KEYBOARD)
+        return
+
+    await update.message.reply_text("Отлично! Составляю для тебя примерный план тренировок...", reply_markup=ReplyKeyboardRemove())
+
+    personal_info_prompt = get_personal_prompt(profile, user_name)
+    workout_prompt = (
+        f"Ты — профессиональный фитнес-тренер. Используя данные профиля пользователя, "
+        f"составь примерный план тренировок на неделю (3-4 тренировки) с учетом его цели и уровня активности. "
+        f"{personal_info_prompt} "
+        f"План должен включать тип тренировки (силовая, кардио), примерные упражнения и их количество подходов/повторений. "
+        f"Ответь в дружелюбном, мотивирующем тоне. "
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "Ты — профессиональный фитнес-тренер, который дает четкие и безопасные рекомендации по тренировкам."},
+                {"role": "user", "content": workout_prompt}
+            ],
+            max_tokens=800,
+            temperature=0.7
+        )
+        workout_response = response.choices[0].message.content
+        await update.message.reply_text(workout_response)
+        await update.message.reply_text("Удачи с тренировками! Чем еще могу помочь?", reply_markup=START_KEYBOARD)
+    except Exception as e:
+        logger.error(f"Error generating workout plan with OpenAI: {e}")
+        await update.message.reply_text("Извини, не смог составить план тренировок. Проблемы с AI-сервисом.")
+
+async def contact_doctor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Выводит информацию для связи с реальным врачом."""
+    message_text = (
+        "Если тебе нужна персональная консультация или ты хочешь получить точный медицинский диагноз, "
+        "важно обратиться к реальному специалисту.\n\n"
+        "Мы рекомендуем обратиться к проверенным клиникам или онлайн-сервисам телемедицины, таким как:\n"
+        "- [Название сервиса телемедицины 1](https://example.com/telemed1)\n"
+        "- [Название клиники](https://example.com/clinic)\n\n"
+        "Твой ИИ-консьерж не является заменой профессиональной медицинской консультации."
+    )
+    await update.message.reply_text(message_text, disable_web_page_preview=True, reply_markup=START_KEYBOARD)
+
 
 # --- Основная функция запуска бота ---
 
@@ -885,7 +999,7 @@ def main() -> None:
 
     # Команды
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("role", set_role)) # Теперь для кнопок
+    application.add_handler(CommandHandler("role", set_role))
     application.add_handler(CommandHandler("roles", show_roles))
     application.add_handler(CommandHandler("myrole", get_current_role))
     application.add_handler(CommandHandler("diary", show_food_diary))
@@ -893,19 +1007,17 @@ def main() -> None:
     application.add_handler(CommandHandler("cancel_profile", cancel_profile))
     application.add_handler(CommandHandler("add_score", add_score))
     application.add_handler(CommandHandler("score", show_score))
-    application.add_handler(CommandHandler("bmi", explain_bmi)) # Новая команда
-    application.add_handler(CommandHandler("vo2max", explain_vo2max)) # Новая команда
+    application.add_handler(CommandHandler("bmi", explain_bmi))
+    application.add_handler(CommandHandler("vo2max", explain_vo2max))
 
-    # Обработчик для выбора роли с кнопок (должен быть до handle_message)
-    # Используем ROLE_BUTTON_LABELS, чтобы создать Regex, который соответствует названиям всех ролей
+    # Обработчик для выбора роли с кнопок
     role_pattern = r"^(" + "|".join([re.escape(label) for label in ROLE_BUTTON_LABELS]) + r")$"
     application.add_handler(MessageHandler(filters.TEXT & filters.Regex(role_pattern) & ~filters.COMMAND, handle_role_selection))
 
     # Обработчик для фотографий
     application.add_handler(MessageHandler(filters.PHOTO & ~filters.COMMAND, handle_photo))
     
-    # Обработчик текстовых сообщений (должен быть последним)
-    # Теперь обрабатывает и нажатия кнопок из START_KEYBOARD
+    # Обработчик текстовых сообщений
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 
